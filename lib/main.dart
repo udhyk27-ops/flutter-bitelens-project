@@ -1,9 +1,12 @@
-import 'package:bitelens/result_screen.dart';
+import 'package:bitelens/screens/result_screen.dart';
+import 'package:bitelens/screens/settings_screen.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
+
+import 'screens/history_screen.dart';
 
 late List<CameraDescription> _cameras;
 
@@ -243,8 +246,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             _DrawerItem(icon: Icons.home_outlined, label: '홈', onTap: () => Navigator.pop(context)),
-            _DrawerItem(icon: Icons.history_outlined, label: '분석 기록', onTap: () => Navigator.pop(context)),
-            _DrawerItem(icon: Icons.settings_outlined, label: '설정', onTap: () => Navigator.pop(context)),
+            _DrawerItem(
+              icon: Icons.history_outlined,
+              label: '분석 기록',
+              onTap: () {
+                Navigator.pop(context); // 드로어 닫기
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                );
+              },
+            ),
+            _DrawerItem(
+              icon: Icons.settings_outlined,
+              label: '설정',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),

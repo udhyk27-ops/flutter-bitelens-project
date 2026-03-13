@@ -15,6 +15,8 @@ dependencies:
   google_generative_ai: ^0.4.6 # 푸드스캐너 AI
   flutter_dotenv: ^5.1.0 # 환경설정
   image_picker: ^1.1.2 # 갤러리
+  sqflite: ^2.3.3 # 디바이스 저장
+  path: ^1.9.0
 
   # Firebase Core
   firebase_core: ^3.10.1

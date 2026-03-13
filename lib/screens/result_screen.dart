@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
+import '../services/database_helper.dart';
+
 class ResultScreen extends StatefulWidget {
   final String imagePath;
 
@@ -85,6 +87,11 @@ class _ResultScreenState extends State<ResultScreen>
 
       _scanController.stop();
       _fadeController.forward();
+
+      await DatabaseHelper.instance.insertAnalysis( /// 결과 저장
+        imagePath: widget.imagePath,
+        result: _result,
+      );
     } catch (e) {
       print('오류 발생: $e');
       setState(() {
