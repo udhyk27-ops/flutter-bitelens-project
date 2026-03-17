@@ -64,6 +64,13 @@ class _ResultScreenState extends State<ResultScreen>
     final prefs = await SharedPreferences.getInstance();
     final saveHistory = prefs.getBool('save_history') ?? true;
     final detailedAnalysis = prefs.getBool('detailed_analysis') ?? false;
+    final language = prefs.getString('response_language') ?? '한국어';
+
+    final languageInstruction = {
+      '한국어': '한국어로 답해줘.',
+      'English': 'Answer in English.',
+      '日本語': '日本語で答えてください。',
+    }[language];
 
     try {
       final model = GenerativeModel(
@@ -80,32 +87,33 @@ class _ResultScreenState extends State<ResultScreen>
           ? rawBytes // JPEG면 그대로 사용
           : await compute(_convertToJpeg, rawBytes); // 아닐 때만 변환
 
+      final basePrompt = detailedAnalysis
+          ? '''
+              이 음식 사진을 최대한 정밀하게 분석해줘.
+              음식 이름:
+              예상 칼로리:
+              주요 영양소:
+              - 탄수화물:
+              - 단백질:
+              - 지방:
+              - 나트륨:
+              - 식이섬유:
+              추가 정보: 재료, 조리법, 혈당지수(GI) 등 상세하게
+            '''
+          : '''
+              이 음식 사진을 분석해줘. 다음 형식으로 답해줘:
+              음식 이름: 
+              예상 칼로리: 
+              주요 영양소:
+              - 탄수화물:
+              - 단백질:
+              - 지방:
+            ''';
+
       final prompt = [
         Content.multi([
           DataPart('image/jpeg', imageBytes),
-          TextPart(!detailedAnalysis
-            ? '''
-                이 음식 사진을 분석해줘. 다음 형식으로 답해줘:
-                음식 이름: 
-                예상 칼로리: 
-                주요 영양소:
-                - 탄수화물:
-                - 단백질:
-                - 지방:
-              '''
-            : '''
-                이 음식 사진을 최대한 정밀하게 분석해줘.
-                음식 이름:
-                예상 칼로리:
-                주요 영양소:
-                - 탄수화물:
-                - 단백질:
-                - 지방:
-                - 나트륨:
-                - 식이섬유:
-                추가 정보: 재료, 조리법, 혈당지수(GI) 등 상세하게
-              '''
-          ),
+          TextPart('$languageInstruction\n$basePrompt'),
         ])
       ];
 

@@ -1,3 +1,4 @@
+import 'package:bitelens/screens/webview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -153,7 +154,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: '응답 언어',
                   value: _selectedLanguage,
                   options: ['한국어', 'English', '日本語'],
-                  onChanged: (val) => setState(() => _selectedLanguage = val),
+                  onChanged: (val) async {
+                    setState(() => _selectedLanguage = val);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString('response_language', val);
+                  },
                 ),
               ],
             ),
@@ -185,9 +190,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _ActionItem(
                   icon: Icons.description_outlined,
                   title: '개인정보 처리방침',
-                  onTap: () async {
-                    final url = Uri.parse('https://udhyk27-ops.github.io');
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const WebViewScreen(
+                          url: 'https://udhyk27-ops.github.io',
+                          title: '개인정보 처리방침',
+                        ),
+                      ),
+                    );
                   },
                 ),
                 _Divider(),

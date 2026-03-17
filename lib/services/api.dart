@@ -20,6 +20,8 @@ class Api {
   String storeUrl = "";
 
   Future<void> getRemoteConfig() async {
+
+    print('@#@#');
     try {
       final FirebaseRemoteConfig rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(RemoteConfigSettings(
@@ -32,8 +34,8 @@ class Api {
       appVersion = rc.getString('app_version_aos');
       storeUrl = rc.getString('store_aos');
 
-      debugPrint('appVersion: $appVersion');
-      debugPrint('storeUrl: $storeUrl');
+      print('appVersion: $appVersion');
+      print('storeUrl: $storeUrl');
 
       // print("REMOTE CONFIG 로드 완료: ${onBoardText.keys}");
     } catch (e) {
