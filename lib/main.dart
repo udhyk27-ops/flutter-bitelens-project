@@ -12,7 +12,6 @@ import 'screens/history_screen.dart';
 late List<CameraDescription> _cameras;
 
 Future<void> main() async {
-  await dotenv.load(fileName: ".env");
   WidgetsFlutterBinding.ensureInitialized();
   _cameras = await availableCameras();
   Api().getRemoteConfig();

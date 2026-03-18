@@ -1,8 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
@@ -60,67 +61,45 @@ class _ResultScreenState extends State<ResultScreen>
   }
 
   Future<void> _analyzeFood() async {
+    /// 네트워크 확인
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none)) {
+      setState(() {
+        _result = '인터넷 연결을 확인해주세요.';
+        _isLoading = false;
+      });
+      _scanController.stop();
+      _fadeController.forward();
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final saveHistory = prefs.getBool('save_history') ?? true;
     final detailedAnalysis = prefs.getBool('detailed_analysis') ?? false;
     final language = prefs.getString('response_language') ?? '한국어';
 
-    final languageInstruction = {
-      '한국어': '한국어로 답해줘.',
-      'English': 'Answer in English.',
-      '日本語': '日本語で答えてください。',
-    }[language];
-
     try {
-      final model = GenerativeModel(
-        model: 'gemini-2.5-flash-lite',
-        apiKey: dotenv.env['GEMINI_API_KEY']!,
+      final rawBytes = await File(widget.imagePath).readAsBytes();
+      final isJpeg = rawBytes[0] == 0xFF && rawBytes[1] == 0xD8 && rawBytes[2] == 0xFF;
+      final imageBytes = isJpeg
+          ? rawBytes
+          : await compute(_convertToJpeg, rawBytes);
+
+      // Functions 호출
+      final response = await http.post(
+        Uri.parse('https://analyzefood-mfdr4grlbq-uc.a.run.app'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'imageBase64': base64Encode(imageBytes),
+          'detailedAnalysis': detailedAnalysis,
+          'language': language,
+        }),
       );
 
-      final rawBytes = await File(widget.imagePath).readAsBytes();
-
-      // JPEG 시그니처 확인 (FF D8 FF)
-      final isJpeg = rawBytes[0] == 0xFF && rawBytes[1] == 0xD8 && rawBytes[2] == 0xFF;
-
-      final imageBytes = isJpeg
-          ? rawBytes // JPEG면 그대로 사용
-          : await compute(_convertToJpeg, rawBytes); // 아닐 때만 변환
-
-      final basePrompt = detailedAnalysis
-          ? '''
-              이 음식 사진을 최대한 정밀하게 분석해줘.
-              음식 이름:
-              예상 칼로리:
-              주요 영양소:
-              - 탄수화물:
-              - 단백질:
-              - 지방:
-              - 나트륨:
-              - 식이섬유:
-              추가 정보: 재료, 조리법, 혈당지수(GI) 등 상세하게
-            '''
-          : '''
-              이 음식 사진을 분석해줘. 다음 형식으로 답해줘:
-              음식 이름: 
-              예상 칼로리: 
-              주요 영양소:
-              - 탄수화물:
-              - 단백질:
-              - 지방:
-            ''';
-
-      final prompt = [
-        Content.multi([
-          DataPart('image/jpeg', imageBytes),
-          TextPart('$languageInstruction\n$basePrompt'),
-        ])
-      ];
-
-      final response = await model.generateContent(prompt);
+      final data = jsonDecode(response.body);
 
       setState(() {
-        _result = response.text ?? '분석 실패';
+        _result = data['result'] ?? '분석 실패';
         _isLoading = false;
       });
 
@@ -128,7 +107,7 @@ class _ResultScreenState extends State<ResultScreen>
       _fadeController.forward();
 
       if (saveHistory) {
-        await DatabaseHelper.instance.insertAnalysis( // 결과 저장
+        await DatabaseHelper.instance.insertAnalysis(
           imagePath: widget.imagePath,
           result: _result,
         );
