@@ -8,10 +8,12 @@ exports.analyzeFood = onRequest(
   { secrets: [GEMINI_API_KEY] },
   async (req, res) => {
   try {
-    const { imageBase64, detailedAnalysis, language } = req.body;
+    const { imageBase64, detailedAnalysis, language, aiModel } = req.body;
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    const model = genAI.getGenerativeModel({
+      model: aiModel || "gemini-2.5-flash-lite" // 없으면 기본값
+    });
 
     const languageInstruction = {
       '한국어': '한국어로 답해줘.',

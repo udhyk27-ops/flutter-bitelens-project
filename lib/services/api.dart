@@ -18,10 +18,10 @@ class Api {
   // 인스턴스에 변수 저장
   String appVersion = "";
   String storeUrl = "";
+  String aiModel = "";
 
   Future<void> getRemoteConfig() async {
 
-    print('@#@#');
     try {
       final FirebaseRemoteConfig rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(RemoteConfigSettings(
@@ -31,13 +31,10 @@ class Api {
 
       await rc.fetchAndActivate();
 
+      aiModel = rc.getString('ai_model');
       appVersion = rc.getString('app_version_aos');
       storeUrl = rc.getString('store_aos');
 
-      print('appVersion: $appVersion');
-      print('storeUrl: $storeUrl');
-
-      // print("REMOTE CONFIG 로드 완료: ${onBoardText.keys}");
     } catch (e) {
       debugPrint('REMOTE CONFIG ERROR: $e');
     }

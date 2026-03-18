@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 
+import '../services/api.dart';
 import '../services/database_helper.dart';
 
 class ResultScreen extends StatefulWidget {
@@ -93,6 +94,7 @@ class _ResultScreenState extends State<ResultScreen>
           'imageBase64': base64Encode(imageBytes),
           'detailedAnalysis': detailedAnalysis,
           'language': language,
+          'aiModel': Api().aiModel,
         }),
       );
 
