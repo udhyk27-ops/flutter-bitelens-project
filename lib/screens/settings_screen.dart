@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/api.dart';
 import '../services/database_helper.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -194,8 +195,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const WebViewScreen(
-                          url: 'https://udhyk27-ops.github.io/bitelens/privacy',
+                        builder: (_) => WebViewScreen(
+                          url: Api().privacyUrl,
                           title: '개인정보 처리방침',
                         ),
                       ),

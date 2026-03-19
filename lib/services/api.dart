@@ -19,6 +19,7 @@ class Api {
   String appVersion = "";
   String storeUrl = "";
   String aiModel = "";
+  String privacyUrl = "";
 
   Future<void> getRemoteConfig() async {
 
@@ -34,6 +35,7 @@ class Api {
       aiModel = rc.getString('ai_model');
       appVersion = rc.getString('app_version_aos');
       storeUrl = rc.getString('store_aos');
+      privacyUrl = rc.getString('privacy');
 
     } catch (e) {
       debugPrint('REMOTE CONFIG ERROR: $e');
