@@ -1,5 +1,5 @@
 import 'package:bitelens/screens/home_screen.dart';
-import 'package:bitelens/services/api.dart';
+import 'package:bitelens/services/api_service.dart';
 import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';

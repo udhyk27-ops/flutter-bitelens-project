@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:bitelens/services/database_helper.dart';
+import 'package:bitelens/services/database_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 class HistoryScreen extends StatefulWidget {

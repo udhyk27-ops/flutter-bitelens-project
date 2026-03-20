@@ -9,8 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 
-import '../services/api.dart';
-import '../services/database_helper.dart';
+import '../services/api_service.dart';
+import '../services/database_service.dart';
 
 class ResultScreen extends StatefulWidget {
   final String imagePath;

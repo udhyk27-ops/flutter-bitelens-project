@@ -37,6 +37,8 @@ class Api {
       storeUrl = rc.getString('store_aos');
       privacyUrl = rc.getString('privacy');
 
+      print('appVersion: $appVersion');
+
     } catch (e) {
       debugPrint('REMOTE CONFIG ERROR: $e');
     }

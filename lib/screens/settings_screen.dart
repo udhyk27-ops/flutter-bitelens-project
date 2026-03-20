@@ -1,10 +1,9 @@
 import 'package:bitelens/screens/webview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../services/api.dart';
-import '../services/database_helper.dart';
+import '../services/api_service.dart';
+import '../services/database_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -30,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _saveHistory = prefs.getBool('save_history') ?? true;
       _detailedAnalysis = prefs.getBool('detailed_analysis') ?? false;
+      _selectedLanguage = prefs.getString('response_language') ?? '한국어';
     });
   }
 
@@ -38,7 +38,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, val);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: const Icon(Icons.restaurant, color: Colors.white, size: 24),
                   ),
                   const SizedBox(width: 16),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -103,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Version 1.0.0',
+                        'Version ${Api().appVersion}',
                         style: TextStyle(color: Colors.white30, fontSize: 12),
                       ),
                     ],
@@ -126,7 +125,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _saveHistory,
                   onChanged: (val) async {
                     setState(() => _saveHistory = val);
-                    await _saveSetting('saved_history', val); // 기기 저장
+                    await _saveSetting('save_history', val); // 기기 저장
                   },
                 ),
                 _Divider(),
