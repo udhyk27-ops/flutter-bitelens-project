@@ -64,10 +64,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (!mounted) return;
 
     if (goProfile) {
-      // 프로필 먼저 설정 후 홈으로
-      await Navigator.pushReplacement(
+      // 홈을 스택 바닥에 깔고 프로필을 그 위에 올림
+      // 뒤로가기 시 홈으로 자연스럽게 이동
+      Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => ProfileScreen()),
+        MaterialPageRoute(builder: (_) => HomeScreen(cameras: widget.cameras)),
+      );
+      await Future.delayed(Duration.zero); // 빌드 완료 후 push
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
       );
     } else {
       Navigator.pushReplacement(
