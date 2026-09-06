@@ -16,6 +16,16 @@ import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../widgets/analysis_edit_sheet.dart';
 
+/// 분석 실패 사유를 사용자에게 그대로 전달하기 위한 예외.
+/// 상태코드별 메시지가 일반 catch(e)에서 "분석 중 오류"로 뭉개지지 않도록
+/// 별도 타입으로 구분한다.
+class _AnalyzeException implements Exception {
+  final String message;
+  const _AnalyzeException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ResultScreen extends StatefulWidget {
   final String imagePath;
 
@@ -109,20 +119,13 @@ class _ResultScreenState extends State<ResultScreen>
         imageBytes = rawBytes;
       }
 
-      // App Check 토큰 (등록된 앱임을 Cloud Function에 증명)
-      String? appCheckToken;
-      try {
-        appCheckToken = await FirebaseAppCheck.instance.getToken();
-      } catch (e) {
-        debugPrint('App Check token error: $e');
-      }
-
+      // App Check 토큰 발급·부착은 _postWithRetry 내부에서 처리한다
+      // (401 수신 시 토큰을 강제 갱신해 재시도할 수 있도록).
       final result = await _postWithRetry(
         base64Image: base64Encode(imageBytes),
         detailedAnalysis: detailedAnalysis,
         language: language,
         aiModel: Api().aiModel,
-        appCheckToken: appCheckToken,
       );
 
       final analysis = FoodAnalysis.parse(result); // 1인분 기준
@@ -148,6 +151,10 @@ class _ResultScreenState extends State<ResultScreen>
       _setError('네트워크 연결을 확인해주세요.');
     } on TimeoutException {
       _setError('분석 시간이 초과되었습니다. 다시 시도해주세요.');
+    } on _AnalyzeException catch (e) {
+      // 상태코드별 안내 메시지(앱 인증 실패/서버 혼잡 등)를 그대로 표시
+      debugPrint('분석 오류: ${e.message}');
+      _setError(e.message);
     } catch (e) {
       debugPrint('분석 오류: $e');
       _setError('분석 중 오류가 발생했습니다.');
@@ -206,15 +213,31 @@ class _ResultScreenState extends State<ResultScreen>
   }
 
   /// 최대 3회 재시도 (지수 백오프)
+  ///
+  /// App Check 토큰(등록된 앱임을 Cloud Function에 증명)을 매 시도마다 발급해
+  /// `X-Firebase-AppCheck` 헤더로 부착한다. 401(인증 실패)을 받으면 캐시된
+  /// 토큰이 만료/무효일 수 있으므로 `getToken(true)`로 강제 갱신 후 1회 재시도한다.
   Future<String> _postWithRetry({
     required String base64Image,
     required bool detailedAnalysis,
     required String language,
     required String? aiModel,
-    required String? appCheckToken,
     int maxRetries = 3,
   }) async {
+    bool forceRefreshToken = false; // 401에 대한 강제 갱신은 1회로 제한
+
     for (int attempt = 0; attempt < maxRetries; attempt++) {
+      // 첫 시도는 캐시 토큰, 401 이후 시도는 강제 갱신된 토큰을 사용.
+      // 발급 실패 시 토큰 없이 진행하되 원인을 로그로 남긴다(401의 근본 원인 추적용).
+      String? appCheckToken;
+      try {
+        appCheckToken =
+            await FirebaseAppCheck.instance.getToken(forceRefreshToken);
+      } catch (e) {
+        debugPrint(
+            'App Check 토큰 발급 실패 (forceRefresh=$forceRefreshToken): $e');
+      }
+
       try {
         final response = await http.post(
           Uri.parse('https://analyzefood-mfdr4grlbq-uc.a.run.app'),
@@ -234,11 +257,17 @@ class _ResultScreenState extends State<ResultScreen>
           final data = jsonDecode(response.body);
           return data['result'] ?? '분석 결과를 받지 못했습니다.';
         } else if (response.statusCode == 401) {
-          throw Exception('앱 인증에 실패했습니다. 앱을 재시작해주세요.');
+          // 만료/무효 토큰일 수 있으므로 강제 갱신 후 1회 재시도.
+          if (!forceRefreshToken && attempt < maxRetries - 1) {
+            debugPrint('App Check 401 → 토큰 강제 갱신 후 재시도');
+            forceRefreshToken = true;
+            continue;
+          }
+          throw const _AnalyzeException('앱 인증에 실패했습니다. 앱을 재시작해주세요.');
         } else if (response.statusCode == 429) {
-          throw Exception('서버가 혼잡합니다. 잠시 후 다시 시도해주세요.');
+          throw const _AnalyzeException('서버가 혼잡합니다. 잠시 후 다시 시도해주세요.');
         } else {
-          throw Exception('서버 오류 (${response.statusCode})');
+          throw _AnalyzeException('서버 오류 (${response.statusCode})');
         }
       } on TimeoutException {
         if (attempt == maxRetries - 1) rethrow;
@@ -248,7 +277,7 @@ class _ResultScreenState extends State<ResultScreen>
         await Future.delayed(Duration(seconds: (attempt + 1) * 2));
       }
     }
-    throw Exception('분석에 실패했습니다.');
+    throw const _AnalyzeException('분석에 실패했습니다.');
   }
 
   @override
