@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
@@ -22,7 +23,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE analysis_history (
@@ -64,8 +65,46 @@ class DatabaseHelper {
             'ALTER TABLE analysis_history ADD COLUMN meal TEXT',
           );
         }
+        if (oldVersion < 5) {
+          // food_name/calories 컬럼은 있었으나 채워지지 않았음 → 검색이 전체
+          // JSON을 대상으로 동작했다. 기존 행의 result에서 값을 추출해 백필하고,
+          // 이후 검색은 food_name 컬럼을 사용한다.
+          final rows =
+              await db.query('analysis_history', columns: ['id', 'result']);
+          for (final r in rows) {
+            final result = r['result'] as String?;
+            if (result == null) continue;
+            final (foodName, calories) = _extractSummary(result);
+            if (foodName == null && calories == null) continue;
+            await db.update(
+              'analysis_history',
+              {'food_name': foodName, 'calories': calories?.toString()},
+              where: 'id = ?',
+              whereArgs: [r['id']],
+            );
+          }
+        }
       },
     );
+  }
+
+  /// result(JSON 문자열)에서 검색·표시에 쓸 (음식명, 칼로리)를 추출.
+  /// 레거시 자연어 포맷이면 추출 실패 → (null, null) (검색 대상에서 제외됨).
+  (String?, int?) _extractSummary(String result) {
+    try {
+      final decoded = jsonDecode(result);
+      if (decoded is Map) {
+        final name = (decoded['foodName'] as Object?)?.toString().trim();
+        final cal = decoded['calories'];
+        return (
+          (name != null && name.isNotEmpty) ? name : null,
+          cal is num ? cal.round() : null,
+        );
+      }
+    } catch (_) {
+      // JSON이 아니면(레거시) 무시
+    }
+    return (null, null);
   }
 
   // ─── 이미지 파일 영구 저장 ────────────────────────────────
@@ -114,8 +153,11 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     final persistedPath = await _persistImage(imagePath);
+    final (foodName, calories) = _extractSummary(result);
     return await db.insert('analysis_history', {
       'image_path': persistedPath,
+      'food_name': foodName,
+      'calories': calories?.toString(),
       'result': result,
       'created_at': DateTime.now().toIso8601String(),
       'is_favorite': 0,
@@ -127,7 +169,13 @@ class DatabaseHelper {
   /// 먹은 양(배수) 변경, 수동 보정, 끼니 태그 변경에 공용으로 사용.
   Future<void> updateAnalysis(int id, {String? result, String? meal}) async {
     final values = <String, Object?>{};
-    if (result != null) values['result'] = result;
+    if (result != null) {
+      values['result'] = result;
+      // 결과가 바뀌면 검색용 요약 컬럼도 함께 갱신
+      final (foodName, calories) = _extractSummary(result);
+      values['food_name'] = foodName;
+      values['calories'] = calories?.toString();
+    }
     if (meal != null) values['meal'] = meal;
     if (values.isEmpty) return;
     final db = await database;
@@ -146,7 +194,7 @@ class DatabaseHelper {
   }
 
   /// 페이지네이션 + 검색/필터 조회.
-  /// [query]는 음식명 검색(result LIKE), [since]는 이 시각 이후 기록만.
+  /// [query]는 음식명 검색(food_name LIKE), [since]는 이 시각 이후 기록만.
   Future<List<Map<String, dynamic>>> getAnalysisHistoryPaged({
     int limit = 20,
     int offset = 0,
@@ -181,7 +229,8 @@ class DatabaseHelper {
     if (favoritesOnly) clauses.add('is_favorite = 1');
     final q = query?.trim() ?? '';
     if (q.isNotEmpty) {
-      clauses.add('result LIKE ?');
+      // 음식명 컬럼만 대상으로 검색(note·수치 등 전체 JSON 오매칭 방지)
+      clauses.add('food_name LIKE ?');
       args.add('%$q%');
     }
     if (since != null) {

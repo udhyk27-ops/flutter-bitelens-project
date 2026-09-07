@@ -1,5 +1,5 @@
 import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 
 class Api {
 
@@ -28,7 +28,10 @@ class Api {
       final FirebaseRemoteConfig rc = FirebaseRemoteConfig.instance;
       await rc.setConfigSettings(RemoteConfigSettings(
         fetchTimeout: const Duration(seconds: 10),
-        minimumFetchInterval: Duration.zero,
+        // 개발 중엔 즉시 반영(zero), 릴리스에선 매 실행 fetch를 피해
+        // 스플래시 지연·데이터 소모·rate limit을 줄인다.
+        minimumFetchInterval:
+            kDebugMode ? Duration.zero : const Duration(hours: 1),
       ));
 
       await rc.fetchAndActivate();

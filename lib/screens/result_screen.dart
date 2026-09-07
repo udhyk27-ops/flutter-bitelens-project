@@ -37,6 +37,10 @@ class ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<ResultScreen>
     with TickerProviderStateMixin {
+  /// 음식 분석 Cloud Function 엔드포인트(us-central1, 고정 URL).
+  static const String _analyzeUrl =
+      'https://analyzefood-mfdr4grlbq-uc.a.run.app';
+
   String _result = '';
   FoodAnalysis? _analysis; // 현재 표시값(배수 반영)
   FoodAnalysis? _baseAnalysis; // AI 추정 1인분 기준값
@@ -84,10 +88,12 @@ class _ResultScreenState extends State<ResultScreen>
 
   Future<void> _analyzeFood() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final tdee = prefs.getDouble('tdee');
     if (tdee != null) setState(() => _tdee = tdee);
 
     final connectivity = await Connectivity().checkConnectivity();
+    if (!mounted) return;
     if (connectivity.contains(ConnectivityResult.none)) {
       setState(() {
         _result = '인터넷 연결을 확인해주세요.';
@@ -112,17 +118,21 @@ class _ResultScreenState extends State<ResultScreen>
       // 업로드 전 다운스케일(별도 isolate) — 전송량·Gemini 입력 비용 절감,
       // 서버 용량 상한 준수. 디코딩 실패 시 원본 바이트로 폴백.
       Uint8List imageBytes;
+      String mimeType;
       try {
         imageBytes = await compute(_prepareImage, rawBytes);
+        mimeType = 'image/jpeg'; // _prepareImage는 항상 JPEG로 인코딩
       } catch (e) {
         debugPrint('이미지 리사이즈 실패, 원본 사용: $e');
         imageBytes = rawBytes;
+        mimeType = _detectMime(rawBytes); // 원본 포맷(HEIC/PNG 등)을 그대로 전달
       }
 
       // App Check 토큰 발급·부착은 _postWithRetry 내부에서 처리한다
       // (401 수신 시 토큰을 강제 갱신해 재시도할 수 있도록).
       final result = await _postWithRetry(
         base64Image: base64Encode(imageBytes),
+        imageMimeType: mimeType,
         detailedAnalysis: detailedAnalysis,
         language: language,
         aiModel: Api().aiModel,
@@ -130,6 +140,7 @@ class _ResultScreenState extends State<ResultScreen>
 
       final analysis = FoodAnalysis.parse(result); // 1인분 기준
 
+      if (!mounted) return; // 최대 30초 네트워크 후 — 화면 이탈 시 setState 방지
       setState(() {
         _result = result;
         _baseAnalysis = analysis;
@@ -219,6 +230,7 @@ class _ResultScreenState extends State<ResultScreen>
   /// 토큰이 만료/무효일 수 있으므로 `getToken(true)`로 강제 갱신 후 1회 재시도한다.
   Future<String> _postWithRetry({
     required String base64Image,
+    required String imageMimeType,
     required bool detailedAnalysis,
     required String language,
     required String? aiModel,
@@ -240,13 +252,14 @@ class _ResultScreenState extends State<ResultScreen>
 
       try {
         final response = await http.post(
-          Uri.parse('https://analyzefood-mfdr4grlbq-uc.a.run.app'),
+          Uri.parse(_analyzeUrl),
           headers: {
             'Content-Type': 'application/json',
             if (appCheckToken != null) 'X-Firebase-AppCheck': appCheckToken,
           },
           body: jsonEncode({
             'imageBase64': base64Image,
+            'imageMimeType': imageMimeType,
             'detailedAnalysis': detailedAnalysis,
             'language': language,
             'aiModel': aiModel,
@@ -258,6 +271,7 @@ class _ResultScreenState extends State<ResultScreen>
           return data['result'] ?? '분석 결과를 받지 못했습니다.';
         } else if (response.statusCode == 401) {
           // 만료/무효 토큰일 수 있으므로 강제 갱신 후 1회 재시도.
+          // (401 본문은 영문 진단 메시지라 사용자에게 노출하지 않는다.)
           if (!forceRefreshToken && attempt < maxRetries - 1) {
             debugPrint('App Check 401 → 토큰 강제 갱신 후 재시도');
             forceRefreshToken = true;
@@ -265,9 +279,13 @@ class _ResultScreenState extends State<ResultScreen>
           }
           throw const _AnalyzeException('앱 인증에 실패했습니다. 앱을 재시작해주세요.');
         } else if (response.statusCode == 429) {
-          throw const _AnalyzeException('서버가 혼잡합니다. 잠시 후 다시 시도해주세요.');
+          throw _AnalyzeException(
+              _serverMessage(response) ?? '서버가 혼잡합니다. 잠시 후 다시 시도해주세요.');
         } else {
-          throw _AnalyzeException('서버 오류 (${response.statusCode})');
+          // 서버가 내려준 안내 메시지(사진 분석 불가/용량 초과 등)를 그대로 표시,
+          // 없으면 상태코드 폴백.
+          throw _AnalyzeException(
+              _serverMessage(response) ?? '서버 오류 (${response.statusCode})');
         }
       } on TimeoutException {
         if (attempt == maxRetries - 1) rethrow;
@@ -278,6 +296,21 @@ class _ResultScreenState extends State<ResultScreen>
       }
     }
     throw const _AnalyzeException('분석에 실패했습니다.');
+  }
+
+  /// 서버가 내려준 `{ "error": "..." }` 메시지를 안전하게 추출한다.
+  /// 파싱 실패/빈 값이면 null(호출부에서 폴백 메시지 사용).
+  String? _serverMessage(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['error'] is String) {
+        final msg = (body['error'] as String).trim();
+        if (msg.isNotEmpty) return msg;
+      }
+    } catch (_) {
+      // JSON이 아니면 무시하고 폴백
+    }
+    return null;
   }
 
   @override
@@ -326,7 +359,15 @@ class _ResultScreenState extends State<ResultScreen>
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Image.file(File(widget.imagePath), fit: BoxFit.cover),
+                  // 표시 영역 픽셀 폭으로 디코드를 제한 — 원본(수천만 화소)을
+                  // 그대로 메모리에 올리지 않아 저사양 기기 OOM/버벅임을 방지.
+                  child: Image.file(
+                    File(widget.imagePath),
+                    fit: BoxFit.cover,
+                    cacheWidth: (MediaQuery.of(context).size.width *
+                            MediaQuery.of(context).devicePixelRatio)
+                        .round(),
+                  ),
                 ),
                 Positioned.fill(
                   child: Container(color: Colors.black.withOpacity(0.35)),
@@ -747,6 +788,36 @@ Uint8List _prepareImage(Uint8List bytes) {
         : img.copyResize(decoded, height: maxDim);
   }
   return Uint8List.fromList(img.encodeJpg(out, quality: 85));
+}
+
+/// 원본 바이트의 매직넘버로 이미지 MIME을 추정한다(리사이즈 폴백 시 사용).
+/// 서버가 허용 목록으로 재검증하므로 인식 실패 시 기본 jpeg를 반환한다.
+String _detectMime(Uint8List b) {
+  if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) {
+    return 'image/jpeg';
+  }
+  if (b.length >= 8 &&
+      b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) {
+    return 'image/png';
+  }
+  // WebP: 'RIFF'....'WEBP'
+  if (b.length >= 12 &&
+      b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46 &&
+      b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50) {
+    return 'image/webp';
+  }
+  // HEIC/HEIF: 'ftyp' 박스 뒤 브랜드(heic/heix/hevc/mif1 등)로 판별
+  if (b.length >= 12 &&
+      b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70) {
+    final brand = String.fromCharCodes(b.sublist(8, 12)).toLowerCase();
+    if (brand.startsWith('hei') ||
+        brand.startsWith('hev') ||
+        brand == 'mif1' ||
+        brand == 'msf1') {
+      return 'image/heic';
+    }
+  }
+  return 'image/jpeg';
 }
 
 // ─── 영양소 시각화 카드 ───────────────────────────────────────────────
