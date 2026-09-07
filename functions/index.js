@@ -114,13 +114,25 @@ exports.analyzeFood = onRequest(
       }
 
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-      const model = genAI.getGenerativeModel({
-        model: requestedModel,
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: { type: "object", properties, required },
+      const model = genAI.getGenerativeModel(
+        {
+          model: requestedModel,
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: { type: "object", properties, required },
+            // 출력 토큰 상한 — 응답당 비용 변동을 억제(상세 분석의 긴 note도 커버).
+            // 초과로 잘리면 JSON 파싱이 실패해 아래에서 502로 안전 처리된다.
+            maxOutputTokens: 1024,
+            // 영양 추정의 재현성을 위해 낮은 온도로 고정.
+            temperature: 0.2,
+          },
         },
-      });
+        {
+          // Gemini 호출 자체 타임아웃(ms). 함수 전체(60s)·클라이언트(30s)보다
+          // 짧게 잡아, 지연 시 인스턴스를 오래 점유하지 않고 504로 빠르게 실패.
+          timeout: 28000,
+        }
+      );
 
       const langName =
         { "한국어": "Korean", "English": "English", "日本語": "Japanese" }[
@@ -150,6 +162,15 @@ exports.analyzeFood = onRequest(
         ]);
       } catch (err) {
         const status = err?.status ?? err?.response?.status;
+        // 타임아웃/취소(위 requestOptions.timeout)는 504로 구분.
+        const timedOut =
+          err?.name === "AbortError" ||
+          /abort|timed?\s*out|timeout/i.test(err?.message || "");
+        if (timedOut) {
+          console.warn("Gemini timeout:", err.message);
+          res.status(504).json({ error: "분석 시간이 초과되었습니다. 다시 시도해주세요." });
+          return;
+        }
         if (status === 429) {
           console.warn("Gemini rate limited:", err.message);
           res.status(429).json({ error: "서버가 혼잡합니다. 잠시 후 다시 시도해주세요." });
